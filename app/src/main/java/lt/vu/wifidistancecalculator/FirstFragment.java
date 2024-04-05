@@ -8,6 +8,8 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
+import android.net.wifi.WifiManager.ScanResultsCallback;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.text.Editable;
@@ -45,40 +47,56 @@ public class FirstFragment extends Fragment {
     private List<String> scanResults = new ArrayList<>();
     private BroadcastReceiver wifiScanReceiver;
 
+    private ScanResultsCallback scanResultsCallback;
+
     @Override
-    public View onCreateView(
-            @NotNull LayoutInflater inflater, ViewGroup container,
-            Bundle savedInstanceState
-    ) {
-
+    public View onCreateView(@NotNull LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
         binding = FragmentFirstBinding.inflate(inflater, container, false);
-
         wifiManager = (WifiManager) requireActivity().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        if (!wifiManager.isWifiEnabled()) {
-            showSnackbar("WiFi is disabled ...", BaseTransientBottomBar.LENGTH_LONG);
-        }
 
-        wifiScanReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context c, Intent intent) {
-                boolean success = intent.getBooleanExtra(
-                        WifiManager.EXTRA_RESULTS_UPDATED, false);
-                if (success) {
-                    scanSuccess();
-                }
-            }
-        };
-
-        IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
-        requireActivity().getApplicationContext().registerReceiver(wifiScanReceiver, intentFilter);
+        setupWifiScanMethod();
 
         return binding.getRoot();
     }
 
+    private void setupWifiScanMethod() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11 이상에서는 ScanResultsCallback를 사용
+            scanResultsCallback = new ScanResultsCallback() {
+                @Override
+                public void onScanResultsAvailable() {
+                    scanSuccess();
+                }
+            };
+            wifiManager.registerScanResultsCallback(requireContext().getMainExecutor(), scanResultsCallback);
+        } else {
+            // Android 10 이하에서는 BroadcastReceiver를 사용
+            IntentFilter intentFilter = new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
+            wifiScanReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    boolean success = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false);
+                    if (success) {
+                        scanSuccess();
+                    }
+                }
+            };
+            requireActivity().getApplicationContext().registerReceiver(wifiScanReceiver, intentFilter);
+        }
+    }
+
+
     private void scanWifi() {
+        if (!wifiManager.isWifiEnabled()) {
+            showSnackbar("WiFi is disabled ...", BaseTransientBottomBar.LENGTH_LONG);
+            return;
+        }
         boolean success = wifiManager.startScan();
-        showSnackbar("Scan started: " + success, BaseTransientBottomBar.LENGTH_SHORT);
+        if (!success) {
+            // Scan failure handling
+            showSnackbar("Scan initiation failed", BaseTransientBottomBar.LENGTH_SHORT);
+        }
     }
 
     // Register the permissions callback, which handles the user's response to the
@@ -102,15 +120,14 @@ public class FirstFragment extends Fragment {
         List<String> stringResults = results.stream()
                 .filter(scanResult -> StringUtils.isNotEmpty(scanResult.SSID))
                 .sorted(Comparator.comparing(scanResult -> scanResult.level, Comparator.reverseOrder()))
-                .map(scanResult -> scanResult.SSID + " RSSI:" + scanResult.level)
+                .map(scanResult -> "SSID: " + scanResult.SSID + ", BSSID: " + scanResult.BSSID + " RSSI:" + scanResult.level)
                 .collect(Collectors.toList());
         scanResults = stringResults;
-        //위 부분에서 ssid 값으로 한기대 와이파이 걸러내서 bssid값으로 보관하게 해야함
 
         ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, stringResults);
         binding.wifiList.setAdapter(adapter);
         saveToFile();
-        scanWifi(); //현재 이 부분때문에 스캔이 계속 되니깐 이후에 주석처리 해서 버튼을 눌렀을 때에만 되게 가능
+//        scanWifi(); //현재 이 부분때문에 스캔이 계속 되니깐 이후에 주석처리 해서 버튼을 눌렀을 때에만 되게 가능
     }
 
     private void saveToFile() {
@@ -167,7 +184,11 @@ public class FirstFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        requireActivity().getApplicationContext().unregisterReceiver(wifiScanReceiver);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && scanResultsCallback != null) {
+            wifiManager.unregisterScanResultsCallback(scanResultsCallback);
+        } else if (wifiScanReceiver != null) {
+            requireActivity().getApplicationContext().unregisterReceiver(wifiScanReceiver);
+        }
         binding = null;
     }
 
