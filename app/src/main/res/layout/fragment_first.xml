@@ -18,13 +18,32 @@
             android:focusableInTouchMode="true"
     />
 
+    <!-- 건물명 입력 -->
     <EditText
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="textPersonName"
-            android:ems="10"
-            android:id="@+id/dataLabelEdit"
-            android:hint="@string/dataLabel"/>
+        android:id="@+id/buildingNameEdit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="건물명"
+        android:inputType="textPersonName"
+        android:ems="10" />
+
+    <!-- 층수 입력 -->
+    <EditText
+        android:id="@+id/floorNumberEdit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="층수"
+        android:inputType="number"
+        android:ems="10" />
+
+    <!-- 노드 번호 입력 -->
+    <EditText
+        android:id="@+id/nodeNumberEdit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="노드 번호"
+        android:inputType="number"
+        android:ems="10" />
 
     <Button
             android:id="@+id/scanBtn"
@@ -36,13 +55,14 @@
             android:text="@string/scan_wifi"
             android:textColor="#212121"/>
 
+    <!-- 데이터 저장 버튼 -->
     <Button
-            android:id="@+id/mapBtn"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:layout_gravity="bottom"
-            android:layout_margin="15dp"
-            android:background="@android:color/holo_red_light"
-            android:text="@string/map"
-            android:textColor="#212121"/>
+        android:id="@+id/saveBtn"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:layout_gravity="bottom"
+        android:layout_margin="15dp"
+        android:background="@android:color/holo_red_light"
+        android:text="데이터 저장"
+        android:textColor="#212121"/>
 </LinearLayout>
