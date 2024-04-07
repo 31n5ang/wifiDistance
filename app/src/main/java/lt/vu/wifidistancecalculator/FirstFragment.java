@@ -48,10 +48,10 @@ public class FirstFragment extends Fragment {
     private BroadcastReceiver wifiScanReceiver;
 
     private ScanResultsCallback scanResultsCallback;
+    //안드로이드 11버전 이상에서 와이파이와 통신을 하기 위해 해당 객체가 필요
 
     @Override
-    public View onCreateView(@NotNull LayoutInflater inflater, ViewGroup container,
-                             Bundle savedInstanceState) {
+    public View onCreateView(@NotNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         binding = FragmentFirstBinding.inflate(inflater, container, false);
         wifiManager = (WifiManager) requireActivity().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
 
@@ -88,20 +88,17 @@ public class FirstFragment extends Fragment {
 
 
     private void scanWifi() {
-        if (!wifiManager.isWifiEnabled()) {
+        if (!wifiManager.isWifiEnabled()) { //와이파이 켜져있는지 확인
             showSnackbar("WiFi is disabled ...", BaseTransientBottomBar.LENGTH_LONG);
             return;
         }
         boolean success = wifiManager.startScan();
-        if (!success) {
+        if (!success) { //와이파이 스캔이 되었는지 확인
             // Scan failure handling
             showSnackbar("Scan initiation failed", BaseTransientBottomBar.LENGTH_SHORT);
         }
     }
 
-    // Register the permissions callback, which handles the user's response to the
-// system permissions dialog. Save the return value, an instance of
-// ActivityResultLauncher, as an instance variable.
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
             });
@@ -126,39 +123,57 @@ public class FirstFragment extends Fragment {
 
         ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, stringResults);
         binding.wifiList.setAdapter(adapter);
-        saveToFile();
+        saveToFile(); //이 부분 주석 시 스캔하자마자 저장 안함, 저장 버튼 누를때만 저장 되는지 확인 필요
 //        scanWifi(); //현재 이 부분때문에 스캔이 계속 되니깐 이후에 주석처리 해서 버튼을 눌렀을 때에만 되게 가능
     }
 
     private void saveToFile() {
-        EditText textEditor = binding.dataLabelEdit;
-        Editable labelText = textEditor.getText();
-        if (StringUtils.isEmpty(labelText) || textEditor.hasFocus()) {
+        // EditText에서 사용자 입력 가져오기
+        String buildingName = binding.buildingNameEdit.getText().toString();
+        String floorNumber = binding.floorNumberEdit.getText().toString();
+        String nodeNumber = binding.nodeNumberEdit.getText().toString();
+
+        // 입력값 검증
+        if (buildingName.isEmpty() || floorNumber.isEmpty() || nodeNumber.isEmpty()) {
+            showSnackbar("모든 필드를 입력해주세요.", BaseTransientBottomBar.LENGTH_LONG);
             return;
         }
-        writeFileOnInternalStorage("data.txt", labelText + ": " + String.join(";", scanResults) + "\n");
+
+        // 파일에 저장할 데이터 생성
+        String dataToSave = "건물명: " + buildingName + ", 층수: " + floorNumber + ", 노드 번호: " + nodeNumber
+                + ", 와이파이 정보: " + String.join(";", scanResults) + "\n";
+
+        // 파일에 데이터 쓰기
+        if (writeFileOnInternalStorage("data.txt", dataToSave)) {
+            // 파일 저장이 성공하면 사용자에게 알림
+            showSnackbar("저장되었습니다", BaseTransientBottomBar.LENGTH_SHORT);
+        } else {
+            // 파일 저장에 실패한 경우
+            showSnackbar("저장에 실패했습니다", BaseTransientBottomBar.LENGTH_SHORT);
+        }
     }
 
-    public void writeFileOnInternalStorage(String sFileName, String sBody) {
-        File file = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "mydir");
-        if (!file.exists()) {
-            boolean createdDir = file.mkdir();
-        }
-
+    public boolean writeFileOnInternalStorage(String sFileName, String sBody) {
         try {
-            File gpxfile = new File(file, sFileName);
-            if (!gpxfile.exists()) {
-                boolean createdNewFile = gpxfile.createNewFile();
+            // 앱 전용 외부 저장소 디렉토리에 mydir 디렉토리를 생성합니다.
+            File storageDir = new File(getContext().getExternalFilesDir(null), "mydir");
+            if (!storageDir.exists()) {
+                storageDir.mkdirs();
             }
-            FileWriter writer = new FileWriter(gpxfile, true);
+
+            // 파일을 생성하고 데이터를 씁니다.
+            File file = new File(storageDir, sFileName);
+            FileWriter writer = new FileWriter(file, true);
             writer.append(sBody);
             writer.flush();
             writer.close();
-            showSnackbar("Sucessfully wrote to storage", BaseTransientBottomBar.LENGTH_SHORT);
+            return true; // 파일 저장 성공
         } catch (Exception e) {
             e.printStackTrace();
+            return false; // 파일 저장 실패
         }
     }
+
 
     private void showSnackbar(String text, int length) {
         Snackbar.make(requireActivity().findViewById(android.R.id.content), text, length)
@@ -170,15 +185,7 @@ public class FirstFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         binding.scanBtn.setOnClickListener(v -> scanWifi());
-        binding.dataLabelEdit.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                binding.dataLabelEdit.clearFocus();
-            }
-            return false;
-        });
-
-        binding.mapBtn.setOnClickListener(view1 -> NavHostFragment.findNavController(FirstFragment.this)
-                .navigate(R.id.action_FirstFragment_to_SecondFragment));
+        binding.saveBtn.setOnClickListener(v -> saveToFile());
     }
 
     @Override
