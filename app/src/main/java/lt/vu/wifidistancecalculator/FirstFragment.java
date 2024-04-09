@@ -31,8 +31,11 @@ import com.google.android.material.snackbar.Snackbar;
 import lt.vu.wifidistancecalculator.databinding.FragmentFirstBinding;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -195,6 +198,7 @@ public class FirstFragment extends Fragment {
 
         binding.scanBtn.setOnClickListener(v -> scanWifi());
         binding.saveBtn.setOnClickListener(v -> saveToFile());
+        binding.findBtn.setOnClickListener(v -> determineCurrentLocation());
     }
 
     @Override
@@ -206,6 +210,62 @@ public class FirstFragment extends Fragment {
             requireActivity().getApplicationContext().unregisterReceiver(wifiScanReceiver);
         }
         binding = null;
+    }
+
+    private int[] scanCurrentWifiRssi() {
+        checkForLocationPermission();
+        int[] rssiValues = new int[desiredSSIDs.size()];
+        Arrays.fill(rssiValues, 0); // 모든 값을 0으로 초기화
+
+        List<ScanResult> scanResults = wifiManager.getScanResults();
+        for (int i = 0; i < desiredSSIDs.size(); i++) {
+            for (ScanResult result : scanResults) {
+                if (result.SSID.equals(desiredSSIDs.get(i))) {
+                    rssiValues[i] = result.level;
+                    break;
+                }
+            }
+        }
+
+        return rssiValues;
+    }
+
+    private void determineCurrentLocation() {
+        int[] currentRssiValues = scanCurrentWifiRssi();
+        String bestMatch = "";
+        int minDifference = Integer.MAX_VALUE;
+
+        try {
+            File file = new File(getContext().getExternalFilesDir(null), "mydir/data.txt");
+            BufferedReader br = new BufferedReader(new FileReader(file));
+            String line;
+
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(", ");
+                if (parts.length < desiredSSIDs.size() + 3) continue; // 데이터 무결성 검사
+
+                int difference = 0;
+                for (int i = 0; i < desiredSSIDs.size(); i++) {
+                    int recordedRssi = Integer.parseInt(parts[i+3].split(" ")[2]); // "RSSI: [value]"
+                    difference += Math.pow(recordedRssi - currentRssiValues[i], 2);
+                }
+
+                if (difference < minDifference) {
+                    minDifference = difference;
+                    bestMatch = "건물명: " + parts[0] + ", 층수: " + parts[1] + ", 노드 번호: " + parts[2];
+                }
+            }
+
+            br.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        if (!bestMatch.isEmpty()) {
+            showSnackbar(bestMatch, BaseTransientBottomBar.LENGTH_LONG);
+        } else {
+            showSnackbar("위치를 파악할 수 없습니다.", BaseTransientBottomBar.LENGTH_LONG);
+        }
     }
 
 }

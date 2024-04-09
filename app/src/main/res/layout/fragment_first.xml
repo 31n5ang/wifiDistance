@@ -65,4 +65,15 @@
         android:background="@android:color/holo_red_light"
         android:text="데이터 저장"
         android:textColor="#212121"/>
+
+    <!-- 현재 위치 파악 버튼 -->
+    <Button
+        android:id="@+id/findBtn"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:layout_gravity="bottom"
+        android:layout_margin="15dp"
+        android:background="@android:color/holo_red_light"
+        android:text="현재 위치"
+        android:textColor="#212121"/>
 </LinearLayout>
