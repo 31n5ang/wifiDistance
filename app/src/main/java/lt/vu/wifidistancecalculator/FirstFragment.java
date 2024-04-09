@@ -34,6 +34,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -46,6 +47,8 @@ public class FirstFragment extends Fragment {
     //해당 메소드를 사용할 수 없다. 대신하여 registerScanResultsCallback, ScanResultsCallback를 사용한다.
     private List<String> scanResults = new ArrayList<>();
     private BroadcastReceiver wifiScanReceiver;
+
+    private List<String> desiredSSIDs = Arrays.asList("SSID1", "SSID2", "SSID3");
 
     private ScanResultsCallback scanResultsCallback;
     //안드로이드 11버전 이상에서 와이파이와 통신을 하기 위해 해당 객체가 필요
@@ -123,7 +126,7 @@ public class FirstFragment extends Fragment {
 
         ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, stringResults);
         binding.wifiList.setAdapter(adapter);
-        saveToFile(); //이 부분 주석 시 스캔하자마자 저장 안함, 저장 버튼 누를때만 저장 되는지 확인 필요
+//        saveToFile(); //이 부분 주석 시 스캔하자마자 저장 안함, 저장 버튼 누를때만 저장 되는지 확인 필요
 //        scanWifi(); //현재 이 부분때문에 스캔이 계속 되니깐 이후에 주석처리 해서 버튼을 눌렀을 때에만 되게 가능
     }
 
@@ -139,9 +142,14 @@ public class FirstFragment extends Fragment {
             return;
         }
 
+        // 스캔 결과 중 원하는 SSID만 필터링
+        String filteredWifiInfo = scanResults.stream()
+                .filter(scanInfo -> desiredSSIDs.stream().anyMatch(scanInfo::contains))
+                .collect(Collectors.joining(";"));
+
         // 파일에 저장할 데이터 생성
-        String dataToSave = "건물명: " + buildingName + ", 층수: " + floorNumber + ", 노드 번호: " + nodeNumber
-                + ", 와이파이 정보: " + String.join(";", scanResults) + "\n";
+        String dataToSave = String.format("건물명: %s, 층수: %s, 노드 번호: %s\n와이파이 정보: %s\n\n",
+                buildingName, floorNumber, nodeNumber, filteredWifiInfo);
 
         // 파일에 데이터 쓰기
         if (writeFileOnInternalStorage("data.txt", dataToSave)) {
@@ -152,6 +160,7 @@ public class FirstFragment extends Fragment {
             showSnackbar("저장에 실패했습니다", BaseTransientBottomBar.LENGTH_SHORT);
         }
     }
+
 
     public boolean writeFileOnInternalStorage(String sFileName, String sBody) {
         try {
