@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.text.Editable;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -51,7 +52,7 @@ public class FirstFragment extends Fragment {
     private List<String> scanResults = new ArrayList<>();
     private BroadcastReceiver wifiScanReceiver;
 
-    private List<String> desiredSSIDs = Arrays.asList("SSID1", "SSID2", "SSID3");
+    private List<String> desiredBSSIDs = new ArrayList<>();
 
     private ScanResultsCallback scanResultsCallback;
     //안드로이드 11버전 이상에서 와이파이와 통신을 하기 위해 해당 객체가 필요
@@ -118,7 +119,7 @@ public class FirstFragment extends Fragment {
     private void scanSuccess() {
         checkForLocationPermission();
         List<ScanResult> results = wifiManager.getScanResults();
-        showSnackbar("Result size:" + results.size(), BaseTransientBottomBar.LENGTH_LONG);
+//        showSnackbar("Result size:" + results.size(), BaseTransientBottomBar.LENGTH_LONG);
 
         List<String> stringResults = results.stream()
                 .filter(scanResult -> StringUtils.isNotEmpty(scanResult.SSID))
@@ -145,9 +146,9 @@ public class FirstFragment extends Fragment {
             return;
         }
 
-        // 스캔 결과 중 원하는 SSID만 필터링
+        // 스캔 결과 중 원하는 BSSID만 필터링
         String filteredWifiInfo = scanResults.stream()
-                .filter(scanInfo -> desiredSSIDs.stream().anyMatch(scanInfo::contains))
+//                .filter(scanInfo -> desiredBSSIDs.stream().anyMatch(scanInfo::contains))
                 .collect(Collectors.joining(";"));
 
         // 파일에 저장할 데이터 생성
@@ -199,6 +200,10 @@ public class FirstFragment extends Fragment {
         binding.scanBtn.setOnClickListener(v -> scanWifi());
         binding.saveBtn.setOnClickListener(v -> saveToFile());
         binding.findBtn.setOnClickListener(v -> determineCurrentLocation());
+        view.findViewById(R.id.dataCheckBtn).setOnClickListener(v -> {
+            NavHostFragment.findNavController(FirstFragment.this)
+                    .navigate(R.id.action_FirstFragment_to_SecondFragment);
+        });
     }
 
     @Override
@@ -214,48 +219,99 @@ public class FirstFragment extends Fragment {
 
     private int[] scanCurrentWifiRssi() {
         checkForLocationPermission();
-        int[] rssiValues = new int[desiredSSIDs.size()];
+        scanWifi();
+        int[] rssiValues = new int[desiredBSSIDs.size()];
         Arrays.fill(rssiValues, 0); // 모든 값을 0으로 초기화
 
         List<ScanResult> scanResults = wifiManager.getScanResults();
-        for (int i = 0; i < desiredSSIDs.size(); i++) {
+        for (int i = 0; i < desiredBSSIDs.size(); i++) {
             for (ScanResult result : scanResults) {
-                if (result.SSID.equals(desiredSSIDs.get(i))) {
+                if (result.BSSID.equals(desiredBSSIDs.get(i))) {
                     rssiValues[i] = result.level;
                     break;
                 }
             }
         }
-
+        Log.d("AppLog", "rssiValues4 : " + rssiValues[4]);
+        Log.d("AppLog", "rssiValues5 : " + rssiValues[5]);
         return rssiValues;
     }
 
+    private void setDesiredBSSIDs(){
+        try {
+            Log.d("AppLog", "00");
+            File file = new File(getContext().getExternalFilesDir(null), "mydir/bssiddata.txt");
+            Log.d("AppLog", "01");
+            BufferedReader br = new BufferedReader(new FileReader(file));
+            String line;
+            Log.d("AppLog", "02");
+            while ((line = br.readLine()) != null) {
+                if (line.isEmpty() || !line.contains(":")) continue;
+                Log.d("AppLog", "03");
+                desiredBSSIDs.add(line);
+                Log.d("AppLog", "04");
+            }
+            br.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     private void determineCurrentLocation() {
+        Log.d("AppLog", "0");
+        setDesiredBSSIDs();
+        Log.d("AppLog", "1");
         int[] currentRssiValues = scanCurrentWifiRssi();
+        Log.d("AppLog", "2");
         String bestMatch = "";
         int minDifference = Integer.MAX_VALUE;
-
+        Log.d("AppLog", "3");
         try {
-            File file = new File(getContext().getExternalFilesDir(null), "mydir/data.txt");
+            File file = new File(getContext().getExternalFilesDir(null), "mydir/ssiddata.txt");
             BufferedReader br = new BufferedReader(new FileReader(file));
             String line;
 
             while ((line = br.readLine()) != null) {
-                String[] parts = line.split(", ");
-                if (parts.length < desiredSSIDs.size() + 3) continue; // 데이터 무결성 검사
+                Log.d("AppLog", "line : " + line);
+                if (line.isEmpty() || !line.contains("건물명: ")) continue;
 
-                int difference = 0;
-                for (int i = 0; i < desiredSSIDs.size(); i++) {
-                    int recordedRssi = Integer.parseInt(parts[i+3].split(" ")[2]); // "RSSI: [value]"
-                    difference += Math.pow(recordedRssi - currentRssiValues[i], 2);
+                String buildingInfo = line;
+                Log.d("AppLog", "buildingInfo : " + buildingInfo);
+
+                line = br.readLine();
+                String[] parts = line.split("와이파이 정보: ");
+                if (parts.length < 2) continue;
+                String[] wifiInfos = parts[1].split(";");
+
+                // BSSID 별 RSSI 값을 임시로 저장할 배열
+                int[] tempRssiValues = new int[desiredBSSIDs.size()];
+                Arrays.fill(tempRssiValues, 0); // 기본값으로 초기화
+
+                for (String wifiInfo : wifiInfos) {
+                    String[] wifiParts = wifiInfo.split(", ");
+                    String bssid = wifiParts[1].split(" ")[1];
+                    Log.d("AppLog", "bssid : " + bssid);
+                    Log.d("AppLog", "wifiParts 0: " + wifiParts[0]);
+                    Log.d("AppLog", "wifiParts 1: " + wifiParts[1]);
+                    int rssi = Integer.parseInt(wifiParts[1].split("RSSI:")[1]);
+                    Log.d("AppLog", "rssi 오류: " + rssi);
+                    int index = desiredBSSIDs.indexOf(bssid);
+                    if (index != -1) {
+                        tempRssiValues[index] = rssi;
+                    }
                 }
 
+                // 차이를 계산
+                int difference = 0;
+                for (int i = 0; i < currentRssiValues.length; i++) {
+                    difference += Math.pow(currentRssiValues[i] - tempRssiValues[i], 2);
+                }
+                Log.d("AppLog", "difference 오류: " + difference);
                 if (difference < minDifference) {
                     minDifference = difference;
-                    bestMatch = "건물명: " + parts[0] + ", 층수: " + parts[1] + ", 노드 번호: " + parts[2];
+                    bestMatch = buildingInfo;
                 }
             }
-
             br.close();
         } catch (IOException e) {
             e.printStackTrace();
@@ -267,5 +323,26 @@ public class FirstFragment extends Fragment {
             showSnackbar("위치를 파악할 수 없습니다.", BaseTransientBottomBar.LENGTH_LONG);
         }
     }
+
+
+    private void showFileContent() {
+        // 외부 저장소에서 파일 읽기
+        File file = new File(getContext().getExternalFilesDir(null), "mydir/data.txt");
+        StringBuilder fileContent = new StringBuilder();
+        showSnackbar("1", BaseTransientBottomBar.LENGTH_LONG);
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            String line;
+            showSnackbar("2", BaseTransientBottomBar.LENGTH_LONG);
+            while ((line = br.readLine()) != null) {
+                fileContent.append(line).append("\n");
+            }
+            // 스낵바 표시
+            Snackbar.make(requireView(), fileContent.toString(), Snackbar.LENGTH_LONG).show();
+        } catch (IOException e) {
+            Log.e("FileReadError", "파일을 읽는 중 오류 발생", e);
+            Snackbar.make(requireView(), "파일을 읽을 수 없습니다.", Snackbar.LENGTH_LONG).show();
+        }
+    }
+
 
 }
