@@ -1,11 +1,14 @@
 package lt.vu.wifidistancecalculator;
 
+import static android.app.ProgressDialog.show;
+
 import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiManager.ScanResultsCallback;
@@ -21,6 +24,8 @@ import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.Toast;
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -29,7 +34,23 @@ import androidx.fragment.app.Fragment;
 import androidx.navigation.fragment.NavHostFragment;
 import com.google.android.material.snackbar.BaseTransientBottomBar;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
+import lt.vu.wifidistancecalculator.api.dto.Node;
+import lt.vu.wifidistancecalculator.api.dto.RequestCurrentLocationDto;
+import lt.vu.wifidistancecalculator.api.dto.RequestFingerprintDto;
+import lt.vu.wifidistancecalculator.api.dto.ResponseCurrentLocationDto;
+import lt.vu.wifidistancecalculator.api.dto.ResponseFingerprintDto;
+import lt.vu.wifidistancecalculator.api.dto.Signal;
+import lt.vu.wifidistancecalculator.api.service.FingerPrintService;
 import lt.vu.wifidistancecalculator.databinding.FragmentFirstBinding;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
+
 import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedReader;
@@ -41,6 +62,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 
 public class FirstFragment extends Fragment {
@@ -74,6 +96,7 @@ public class FirstFragment extends Fragment {
                 @Override
                 public void onScanResultsAvailable() {
                     scanSuccess();
+                    requestCurrentLocation();
                 }
             };
             wifiManager.registerScanResultsCallback(requireContext().getMainExecutor(), scanResultsCallback);
@@ -86,6 +109,7 @@ public class FirstFragment extends Fragment {
                     boolean success = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false);
                     if (success) {
                         scanSuccess();
+                        requestCurrentLocation();
                     }
                 }
             };
@@ -116,6 +140,7 @@ public class FirstFragment extends Fragment {
         }
     }
 
+
     private void scanSuccess() {
         checkForLocationPermission();
         List<ScanResult> results = wifiManager.getScanResults();
@@ -124,7 +149,8 @@ public class FirstFragment extends Fragment {
         List<String> stringResults = results.stream()
                 .filter(scanResult -> StringUtils.isNotEmpty(scanResult.SSID))
                 .sorted(Comparator.comparing(scanResult -> scanResult.level, Comparator.reverseOrder()))
-                .map(scanResult -> "SSID: " + scanResult.SSID + ", BSSID: " + scanResult.BSSID + " RSSI:" + scanResult.level)
+                // 쉼표 추가로 가독성 확보
+                .map(scanResult -> scanResult.SSID + ", " + scanResult.BSSID + ", " + scanResult.level)
                 .collect(Collectors.toList());
         scanResults = stringResults;
 
@@ -132,91 +158,132 @@ public class FirstFragment extends Fragment {
         binding.wifiList.setAdapter(adapter);
 //        saveToFile(); //이 부분 주석 시 스캔하자마자 저장 안함, 저장 버튼 누를때만 저장 되는지 확인 필요
 //        scanWifi(); //현재 이 부분때문에 스캔이 계속 되니깐 이후에 주석처리 해서 버튼을 눌렀을 때에만 되게 가능
-    }
 
-    private void saveToFile() {
-        // EditText에서 사용자 입력 가져오기
+        /**
+         * REST API 통신
+         * /api/v1/admin/node/fingerprint/building-name
+         */
+        List<Signal> signalList = new ArrayList<>();
+
+        // 파싱
+        for (String result : scanResults) {
+            StringTokenizer st = new StringTokenizer(result, ",");
+            String ssid = st.nextToken().trim();
+            String mac = st.nextToken().trim();
+            int rssi = Integer.parseInt(st.nextToken().trim());
+            signalList.add(new Signal(ssid, mac, rssi));
+        }
+
         String buildingName = binding.buildingNameEdit.getText().toString();
         String floorNumber = binding.floorNumberEdit.getText().toString();
         String nodeNumber = binding.nodeNumberEdit.getText().toString();
 
-        // 입력값 검증
-        if (buildingName.isEmpty() || floorNumber.isEmpty() || nodeNumber.isEmpty()) {
-            showSnackbar("모든 필드를 입력해주세요.", BaseTransientBottomBar.LENGTH_LONG);
-            return;
+        Node node = new Node();
+        node.setBuildingName(buildingName);
+        node.setNumber(Integer.parseInt(nodeNumber));
+        node.setFloor(Integer.parseInt(floorNumber));
+
+        RequestFingerprintDto requestFingerprintDto = new RequestFingerprintDto(node, signalList);
+
+        // API 요청
+        fingerprintRequest(requestFingerprintDto);
+
+
+    }
+
+    private void fingerprintRequest(RequestFingerprintDto requestFingerprintDto) {
+        // API 요청
+        Gson gson = new GsonBuilder().setLenient().create();
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(FingerPrintService.URL)
+                .addConverterFactory(GsonConverterFactory.create(gson))
+                .build();
+
+        FingerPrintService fingerPrintService = retrofit.create(FingerPrintService.class);
+
+        fingerPrintService.putFingerPrintService(requestFingerprintDto)
+                .enqueue(new Callback<List<ResponseFingerprintDto>>() {
+                    @Override
+                    public void onResponse(Call<List<ResponseFingerprintDto>> call, Response<List<ResponseFingerprintDto>> response) {
+                        binding.responseTV.setText("FingerPrint 저장 성공!");
+                        binding.responseTV.setTextColor(Color.BLUE);
+                    }
+
+                    @Override
+                    public void onFailure(Call<List<ResponseFingerprintDto>> call, Throwable throwable) {
+                        binding.responseTV.setText("FingerPrint 실패!");
+                        binding.responseTV.setTextColor(Color.RED);
+
+                    }
+                });
+    }
+
+    private void requestCurrentLocation() {
+        checkForLocationPermission();
+        List<ScanResult> results = wifiManager.getScanResults();
+        Log.d("test", results.toString());
+//        showSnackbar("Result size:" + results.size(), BaseTransientBottomBar.LENGTH_LONG);
+
+        List<String> stringResults = results.stream()
+                .filter(scanResult -> StringUtils.isNotEmpty(scanResult.SSID))
+                .sorted(Comparator.comparing(scanResult -> scanResult.level, Comparator.reverseOrder()))
+                // 쉼표 추가로 가독성 확보
+                .map(scanResult -> scanResult.SSID + ", " + scanResult.BSSID + ", " + scanResult.level)
+                .collect(Collectors.toList());
+        List<String> scanResults = stringResults;
+
+        /**
+         * REST API 통신
+         * /api/v1/admin/node/fingerprint/building-name
+         */
+        List<Signal> signalList = new ArrayList<>();
+
+        int buildingNo = Integer.parseInt(binding.buildingNameEdit.getText().toString());
+
+        RequestCurrentLocationDto requestCurrentLocationDto = new RequestCurrentLocationDto(
+                buildingNo, signalList
+        );
+
+        // 파싱
+        for (String result : scanResults) {
+            StringTokenizer st = new StringTokenizer(result, ",");
+            String ssid = st.nextToken().trim();
+            String mac = st.nextToken().trim();
+            int rssi = Integer.parseInt(st.nextToken().trim());
+            signalList.add(new Signal(ssid, mac, rssi));
         }
 
-        // 스캔 결과 중 원하는 BSSID만 필터링
-        String filteredWifiInfo = scanResults.stream()
-//                .filter(scanInfo -> desiredBSSIDs.stream().anyMatch(scanInfo::contains))
-                .collect(Collectors.joining(";"));
+        // API 요청
+        Gson gson = new GsonBuilder().setLenient().create();
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(FingerPrintService.URL)
+                .addConverterFactory(GsonConverterFactory.create(gson))
+                .build();
 
-        // 파일에 저장할 데이터 생성
-        String dataToSave = String.format("건물명: %s, 층수: %s, 노드 번호: %s\n와이파이 정보: %s\n\n",
-                buildingName, floorNumber, nodeNumber, filteredWifiInfo);
+        FingerPrintService fingerPrintService = retrofit.create(FingerPrintService.class);
 
-        // 파일에 데이터 쓰기
-        if (writeFileOnInternalStorage("data.txt", dataToSave)) {
-            // 파일 저장이 성공하면 사용자에게 알림
-            showSnackbar("저장되었습니다", BaseTransientBottomBar.LENGTH_SHORT);
-        } else {
-            // 파일 저장에 실패한 경우
-            showSnackbar("저장에 실패했습니다", BaseTransientBottomBar.LENGTH_SHORT);
-        }
+        fingerPrintService.getCurrentLocationService(requestCurrentLocationDto)
+                .enqueue(new Callback<List<ResponseCurrentLocationDto>>() {
+                    @Override
+                    public void onResponse(Call<List<ResponseCurrentLocationDto>> call, Response<List<ResponseCurrentLocationDto>> response) {
+                        binding.responseTV.setTextColor(Color.BLUE);
+                        assert response.body() != null;
+                        ResponseCurrentLocationDto responseCurrentLocationDto =
+                                (ResponseCurrentLocationDto) response.body();
+                        String text = responseCurrentLocationDto.getFloor() + "층, " +
+                                responseCurrentLocationDto.getNumber() + "번 노드";
+                        binding.responseTV.setText(text);
+                        Log.d("test", "CurrentLocation 성공");
+                    }
+
+                    @Override
+                    public void onFailure(Call<List<ResponseCurrentLocationDto>> call, Throwable throwable) {
+                        binding.responseTV.setText("요청 실패!");
+                        binding.responseTV.setTextColor(Color.RED);
+                        Log.e("test", throwable.toString());
+                    }
+                });
     }
-
-
-    public boolean writeFileOnInternalStorage(String sFileName, String sBody) {
-        try {
-            // 앱 전용 외부 저장소 디렉토리에 mydir 디렉토리를 생성합니다.
-            File storageDir = new File(getContext().getExternalFilesDir(null), "mydir");
-            if (!storageDir.exists()) {
-                storageDir.mkdirs();
-            }
-
-            // 파일을 생성하고 데이터를 씁니다.
-            File file = new File(storageDir, sFileName);
-            FileWriter writer = new FileWriter(file, true);
-            writer.append(sBody);
-            writer.flush();
-            writer.close();
-            return true; // 파일 저장 성공
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false; // 파일 저장 실패
-        }
-    }
-
-
-    private void showSnackbar(String text, int length) {
-        Snackbar.make(requireActivity().findViewById(android.R.id.content), text, length)
-                .setAction("Action", null).show();
-    }
-
-    @Override
-    public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
-        super.onViewCreated(view, savedInstanceState);
-
-        binding.scanBtn.setOnClickListener(v -> scanWifi());
-        binding.saveBtn.setOnClickListener(v -> saveToFile());
-        binding.findBtn.setOnClickListener(v -> determineCurrentLocation());
-        view.findViewById(R.id.dataCheckBtn).setOnClickListener(v -> {
-            NavHostFragment.findNavController(FirstFragment.this)
-                    .navigate(R.id.action_FirstFragment_to_SecondFragment);
-        });
-    }
-
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && scanResultsCallback != null) {
-            wifiManager.unregisterScanResultsCallback(scanResultsCallback);
-        } else if (wifiScanReceiver != null) {
-            requireActivity().getApplicationContext().unregisterReceiver(wifiScanReceiver);
-        }
-        binding = null;
-    }
-
     private int[] scanCurrentWifiRssi() {
         checkForLocationPermission();
         scanWifi();
@@ -236,6 +303,7 @@ public class FirstFragment extends Fragment {
         Log.d("AppLog", "rssiValues5 : " + rssiValues[5]);
         return rssiValues;
     }
+
 
     private void setDesiredBSSIDs(){
         try {
@@ -324,25 +392,27 @@ public class FirstFragment extends Fragment {
         }
     }
 
-
-    private void showFileContent() {
-        // 외부 저장소에서 파일 읽기
-        File file = new File(getContext().getExternalFilesDir(null), "mydir/data.txt");
-        StringBuilder fileContent = new StringBuilder();
-        showSnackbar("1", BaseTransientBottomBar.LENGTH_LONG);
-        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-            String line;
-            showSnackbar("2", BaseTransientBottomBar.LENGTH_LONG);
-            while ((line = br.readLine()) != null) {
-                fileContent.append(line).append("\n");
-            }
-            // 스낵바 표시
-            Snackbar.make(requireView(), fileContent.toString(), Snackbar.LENGTH_LONG).show();
-        } catch (IOException e) {
-            Log.e("FileReadError", "파일을 읽는 중 오류 발생", e);
-            Snackbar.make(requireView(), "파일을 읽을 수 없습니다.", Snackbar.LENGTH_LONG).show();
-        }
+    public void showSnackbar(String text, int length) {
+        Snackbar.make(requireActivity().findViewById(android.R.id.content), text, length)
+                .setAction("Action", null).show();
     }
 
+    @Override
+    public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
 
+        binding.scanBtn.setOnClickListener(v -> scanWifi());
+        binding.clBtn.setOnClickListener(v -> requestCurrentLocation());
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && scanResultsCallback != null) {
+            wifiManager.unregisterScanResultsCallback(scanResultsCallback);
+        } else if (wifiScanReceiver != null) {
+            requireActivity().getApplicationContext().unregisterReceiver(wifiScanReceiver);
+        }
+        binding = null;
+    }
 }
