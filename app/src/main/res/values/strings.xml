@@ -3,7 +3,7 @@
     <string name="action_settings">Settings</string>
     <!-- Strings used for fragments for navigation -->
     <string name="first_fragment_label">Wi-fi AP list</string>
-    <string name="second_fragment_label">Indoor map</string>
+    <string name="second_fragment_label">Indoor data</string>
     <string name="map">Map</string>
     <string name="previous">Back to Wi-Fi scanning</string>
     <string name="refresh">Refresh</string>
