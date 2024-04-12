@@ -22,6 +22,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.Toast;
@@ -37,6 +38,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
+import lt.vu.wifidistancecalculator.api.NullOnEmptyConverterFactory;
 import lt.vu.wifidistancecalculator.api.dto.Node;
 import lt.vu.wifidistancecalculator.api.dto.RequestCurrentLocationDto;
 import lt.vu.wifidistancecalculator.api.dto.RequestFingerprintDto;
@@ -96,7 +98,6 @@ public class FirstFragment extends Fragment {
                 @Override
                 public void onScanResultsAvailable() {
                     scanSuccess();
-                    requestCurrentLocation();
                 }
             };
             wifiManager.registerScanResultsCallback(requireContext().getMainExecutor(), scanResultsCallback);
@@ -109,7 +110,6 @@ public class FirstFragment extends Fragment {
                     boolean success = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false);
                     if (success) {
                         scanSuccess();
-                        requestCurrentLocation();
                     }
                 }
             };
@@ -117,8 +117,9 @@ public class FirstFragment extends Fragment {
         }
     }
 
-
     private void scanWifi() {
+        binding.responseTV.setText("wifi 스캔중..");
+        binding.responseTV.setTextColor(Color.BLACK);
         if (!wifiManager.isWifiEnabled()) { //와이파이 켜져있는지 확인
             showSnackbar("WiFi is disabled ...", BaseTransientBottomBar.LENGTH_LONG);
             return;
@@ -142,6 +143,9 @@ public class FirstFragment extends Fragment {
 
 
     private void scanSuccess() {
+        hideKeyboard(getContext(), getView());
+        binding.responseTV.setText("wifi 스캔 성공!");
+        binding.responseTV.setTextColor(Color.BLUE);
         checkForLocationPermission();
         List<ScanResult> results = wifiManager.getScanResults();
 //        showSnackbar("Result size:" + results.size(), BaseTransientBottomBar.LENGTH_LONG);
@@ -158,7 +162,13 @@ public class FirstFragment extends Fragment {
         binding.wifiList.setAdapter(adapter);
 //        saveToFile(); //이 부분 주석 시 스캔하자마자 저장 안함, 저장 버튼 누를때만 저장 되는지 확인 필요
 //        scanWifi(); //현재 이 부분때문에 스캔이 계속 되니깐 이후에 주석처리 해서 버튼을 눌렀을 때에만 되게 가능
+    }
 
+    private void requestPutFingerprint() {
+        hideKeyboard(getContext(), getView());
+        binding.responseTV.setTextColor(Color.GRAY);
+        binding.responseTV.setText("Fingerprint 저장 요청중..");
+        //
         /**
          * REST API 통신
          * /api/v1/admin/node/fingerprint/building-name
@@ -186,32 +196,26 @@ public class FirstFragment extends Fragment {
         RequestFingerprintDto requestFingerprintDto = new RequestFingerprintDto(node, signalList);
 
         // API 요청
-        fingerprintRequest(requestFingerprintDto);
-
-
-    }
-
-    private void fingerprintRequest(RequestFingerprintDto requestFingerprintDto) {
-        // API 요청
         Gson gson = new GsonBuilder().setLenient().create();
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(FingerPrintService.URL)
+                .addConverterFactory(new NullOnEmptyConverterFactory())
                 .addConverterFactory(GsonConverterFactory.create(gson))
                 .build();
 
         FingerPrintService fingerPrintService = retrofit.create(FingerPrintService.class);
 
         fingerPrintService.putFingerPrintService(requestFingerprintDto)
-                .enqueue(new Callback<List<ResponseFingerprintDto>>() {
+                .enqueue(new Callback<ResponseFingerprintDto>() {
                     @Override
-                    public void onResponse(Call<List<ResponseFingerprintDto>> call, Response<List<ResponseFingerprintDto>> response) {
-                        binding.responseTV.setText("FingerPrint 저장 성공!");
+                    public void onResponse(Call<ResponseFingerprintDto> call, Response<ResponseFingerprintDto> response) {
+                        binding.responseTV.setText("FingerPrint 저장 성공!" + "[" + response.body() + "]");
                         binding.responseTV.setTextColor(Color.BLUE);
                     }
 
                     @Override
-                    public void onFailure(Call<List<ResponseFingerprintDto>> call, Throwable throwable) {
-                        binding.responseTV.setText("FingerPrint 실패!");
+                    public void onFailure(Call<ResponseFingerprintDto> call, Throwable throwable) {
+                        binding.responseTV.setText("FingerPrint 실패!" + "[" + throwable + "]");
                         binding.responseTV.setTextColor(Color.RED);
 
                     }
@@ -219,10 +223,12 @@ public class FirstFragment extends Fragment {
     }
 
     private void requestCurrentLocation() {
+        hideKeyboard(getContext(), getView());
+        binding.responseTV.setTextColor(Color.GRAY);
+        binding.responseTV.setText("현재 위치 요청중..");
+        //
         checkForLocationPermission();
         List<ScanResult> results = wifiManager.getScanResults();
-        Log.d("test", results.toString());
-//        showSnackbar("Result size:" + results.size(), BaseTransientBottomBar.LENGTH_LONG);
 
         List<String> stringResults = results.stream()
                 .filter(scanResult -> StringUtils.isNotEmpty(scanResult.SSID))
@@ -232,9 +238,12 @@ public class FirstFragment extends Fragment {
                 .collect(Collectors.toList());
         List<String> scanResults = stringResults;
 
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, stringResults);
+        binding.wifiList.setAdapter(adapter);
+
         /**
          * REST API 통신
-         * /api/v1/admin/node/fingerprint/building-name
+         * /api/v1/admin/node/position
          */
         List<Signal> signalList = new ArrayList<>();
 
@@ -257,17 +266,27 @@ public class FirstFragment extends Fragment {
         Gson gson = new GsonBuilder().setLenient().create();
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(FingerPrintService.URL)
+                .addConverterFactory(new NullOnEmptyConverterFactory())
                 .addConverterFactory(GsonConverterFactory.create(gson))
                 .build();
+
+        // Test data
+//        Signal signal = new Signal("KOREATECH", "34:5D:AD:14:DB:20", -46);
+//        List<Signal> list = new ArrayList<>();
+//        list.add(signal);
+//        RequestCurrentLocationDto requestCurrentLocationDto1 = new RequestCurrentLocationDto(
+//                1, list
+//
+//        );
 
         FingerPrintService fingerPrintService = retrofit.create(FingerPrintService.class);
 
         fingerPrintService.getCurrentLocationService(requestCurrentLocationDto)
-                .enqueue(new Callback<List<ResponseCurrentLocationDto>>() {
+                .enqueue(new Callback<ResponseCurrentLocationDto>() {
                     @Override
-                    public void onResponse(Call<List<ResponseCurrentLocationDto>> call, Response<List<ResponseCurrentLocationDto>> response) {
+                    public void onResponse(Call<ResponseCurrentLocationDto> call, Response<ResponseCurrentLocationDto> response) {
                         binding.responseTV.setTextColor(Color.BLUE);
-                        assert response.body() != null;
+//                        assert response.body() != null;
                         ResponseCurrentLocationDto responseCurrentLocationDto =
                                 (ResponseCurrentLocationDto) response.body();
                         String text = responseCurrentLocationDto.getFloor() + "층, " +
@@ -277,10 +296,9 @@ public class FirstFragment extends Fragment {
                     }
 
                     @Override
-                    public void onFailure(Call<List<ResponseCurrentLocationDto>> call, Throwable throwable) {
-                        binding.responseTV.setText("요청 실패!");
+                    public void onFailure(Call<ResponseCurrentLocationDto> call, Throwable throwable) {
+                        binding.responseTV.setText("요청 실패!" + "[" + throwable + "]");
                         binding.responseTV.setTextColor(Color.RED);
-                        Log.e("test", throwable.toString());
                     }
                 });
     }
@@ -402,6 +420,7 @@ public class FirstFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         binding.scanBtn.setOnClickListener(v -> scanWifi());
+        binding.saveBtn.setOnClickListener(v -> requestPutFingerprint());
         binding.clBtn.setOnClickListener(v -> requestCurrentLocation());
     }
 
@@ -414,5 +433,10 @@ public class FirstFragment extends Fragment {
             requireActivity().getApplicationContext().unregisterReceiver(wifiScanReceiver);
         }
         binding = null;
+    }
+
+    public static void hideKeyboard(Context context, View view) {
+        InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
     }
 }

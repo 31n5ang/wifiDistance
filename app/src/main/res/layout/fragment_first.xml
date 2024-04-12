@@ -58,26 +58,37 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="15dp">
+        android:orientation="horizontal">
 
         <!-- 왼쪽 버튼 2개 -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:orientation="vertical"
-            android:layout_marginRight="8dp">
+            android:orientation="vertical">
 
             <Button
                 android:id="@+id/scanBtn"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@android:color/holo_red_light"
-                android:text="핑거프린트 저장" />
+                android:text="와이파이 스캔" />
         </LinearLayout>
 
         <!-- 오른쪽 버튼 2개 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <Button
+                android:id="@+id/saveBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@android:color/holo_red_light"
+                android:text="핑거프린트 저장" />
+        </LinearLayout>
+
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -88,7 +99,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@android:color/holo_red_light"
-                android:text="위치 확인 화면" />
+                android:text="현재 위치 확인" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

@@ -12,15 +12,15 @@ import retrofit2.http.GET;
 import retrofit2.http.POST;
 
 public interface FingerPrintService {
-    String URL = "http://12.345.678.912:8081";
+    String URL = "http://-:8081";
 
     @POST("/api/v1/admin/node/fingerprint/building-name")
-    Call<List<ResponseFingerprintDto>> putFingerPrintService(
+    Call<ResponseFingerprintDto> putFingerPrintService(
             @Body RequestFingerprintDto requestFingerprintDto
             );
 
     @POST("/api/v1/admin/node/position")
-    Call<List<ResponseCurrentLocationDto>> getCurrentLocationService(
+    Call<ResponseCurrentLocationDto> getCurrentLocationService(
             @Body RequestCurrentLocationDto requestCurrentLocationDto
             );
 }
